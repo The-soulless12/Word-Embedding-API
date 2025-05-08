@@ -1,7 +1,4 @@
 import math
-import json
-import random
-from functools import reduce
 from typing import List, Tuple
 from mat_func import mat_add_vec, mat_dot, mat_ew_op, mat_random, mat_transpose, mat_ew_sub, mat_smul
 from . import Layer

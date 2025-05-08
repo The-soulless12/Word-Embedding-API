@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 import os, sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -31,15 +28,9 @@ nw = [
         [0.2, 0.1, 0.1]
         ]
 
-
 def test_Embedding():
-
     assert len(emb.w) == 5 # vocab
-
-    assert len(emb.w[0]) == 3 # embedding size
-
+    assert len(emb.w[0]) == 3 # taille embedding
     assert emb.forward(X) == Y
-
     emb.backward(dY, alpha=0.1)
-
     assert nw == emb.w

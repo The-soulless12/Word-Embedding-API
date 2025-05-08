@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 import os, sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -130,30 +127,20 @@ dV = [
         ]
         ]
 
-
 att = ScaledDotProductAttention()
 
 def test_Attention_forward():
-
     Yh = att.forward(Q, K, V)
 
     assert att.Ss == S
-
     assert att.Ps == P
-
     assert Yh == Y
 
-
 def test_Attention_backward():
-
-    # apply it again bcaus th tsts can b xcutd in parall
     Yh = att.forward(Q, K, V)
 
     dQs, dKs, dVs = att.backward(dY, alpha=0.1)
 
     assert dQs == dQ
-
     assert dKs == dK
-
     assert dVs == dV
-
