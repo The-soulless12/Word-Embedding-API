@@ -1,8 +1,8 @@
 import math
 from typing import List, Tuple
-from mat_func import mat_add_vec, mat_dot, mat_ew_op, mat_random, mat_transpose, mat_ew_sub, mat_smul
+from myapi.mat_func import mat_add_vec, mat_dot, mat_ew_op, mat_random, mat_transpose, mat_ew_sub, mat_smul
 from . import Layer
-from vec_func import vec_ew_mul, vec_ew_op, vec_random, vec_sum, vec_val, vec_smul, vec_softmax
+from myapi.vec_func import vec_ew_mul, vec_ew_op, vec_random, vec_sum, vec_val, vec_smul, vec_softmax, vec_ew_sub
 
 class Linear(Layer):
     def __init__(self, in_size: int, out_size: int, bias: bool = False) -> None:
@@ -43,24 +43,26 @@ class Embedding(Layer):
     def __init__(self, vocab_size: int, embed_dim: int) -> None:
         # Initialise la matrice d'embeddings
         self.w = mat_random(vocab_size, embed_dim)
-
+        
     def forward_single(self, X: List[int]) -> List[List[float]]:
         # Passe avant pour une seule séquence
+        self.indices = X  
         return [self.w[token] for token in X]
 
     def forward(self, Xs: List[List[int]]) -> List[List[List[float]]]:
         # Passe avant pour un lot de séquences
+        self.batch_indices = Xs 
         return [self.forward_single(seq) for seq in Xs]
 
-    def backward_single(self, dY: List[List[float]], alpha: float = 0.01) -> None:
+    def backward_single(self, dY: List[List[float]], indices: List[int], alpha: float = 0.01) -> None:
         # Rétropropagation pour une seule séquence
-        for i, grad in enumerate(dY):
-            self.w[i] = mat_ew_sub(self.w[i], vec_smul(grad, alpha)) 
+        for i, token_idx in enumerate(indices):
+            self.w[token_idx] = vec_ew_sub(self.w[token_idx], vec_smul(dY[i], alpha))
 
     def backward(self, dYs: List[List[List[float]]], alpha: float = 0.01) -> None:
         # Rétropropagation pour un lot de séquences
-        for dY in dYs:
-            self.backward_single(dY, alpha)
+        for batch_idx, dY in enumerate(dYs):
+            self.backward_single(dY, self.batch_indices[batch_idx], alpha)
 
 class LayerNorm(Layer):
     def __init__(self, dim: int, eps: float = 1e-5) -> None:
