@@ -1,13 +1,10 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 class Module:
     def forward(self, X):
-        """Forward pass: should return output"""
+        # Passage avant : doit retourner la sortie
         raise NotImplementedError
 
     def backward(self, dJ):
-        """Backward pass: should return gradient w.r.t. input"""
+        # Passage arrière : doit retourner le gradient par rapport à l'entrée
         raise NotImplementedError
 
 class Layer(Module):
