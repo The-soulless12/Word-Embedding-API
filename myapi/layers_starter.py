@@ -1,8 +1,8 @@
 import math
 from typing import List, Tuple
-from myapi.mat_func import mat_add_vec, mat_dot, mat_ew_op, mat_random, mat_transpose, mat_ew_sub, mat_smul
+from myapi.mat_func import mat_add_vec, mat_dot, mat_ew_op, mat_random, mat_transpose, mat_ew_sub, mat_smul, mat_ew_mul, mat_softmax
 from . import Layer
-from myapi.vec_func import vec_ew_mul, vec_ew_op, vec_random, vec_sum, vec_val, vec_smul, vec_softmax, vec_ew_sub
+from myapi.vec_func import vec_ew_mul, vec_ew_op, vec_random, vec_sum, vec_val, vec_smul, vec_ew_sub, vec_dot
 
 class Linear(Layer):
     def __init__(self, in_size: int, out_size: int, bias: bool = False) -> None:
@@ -153,64 +153,48 @@ class ScaledDotProductAttention(Layer):
         pass 
 
     def forward_single(self, Q: List[List[float]], K: List[List[float]], V: List[List[float]], M: List[List[bool]] = None) -> Tuple[List[List[float]], List[List[float]], List[List[float]]]:
-        # Prédit la sortie pour une seule entrée (T, d)
+        # Calcule l'attention pour une seule entrée
         d = len(Q[0])
-        KT = mat_transpose(K)
-        S = mat_dot(Q, KT)
-        S = mat_smul(S, math.sqrt(d))  
+        scale = 1 / math.sqrt(d)
 
-        if M:
-            for i in range(len(M)):
-                for j in range(len(M[i])):
-                    if not M[i][j]:
-                        S[i][j] = -float('inf')
-
-        P = [vec_softmax(s_row) for s_row in S]
+        S = mat_smul(mat_dot(Q, mat_transpose(K)), scale)
+        P = mat_softmax(S, M)
         Y = mat_dot(P, V)
 
-        return Y, S, P
+        return S, P, Y
 
     def forward(self, Qs: List[List[List[float]]], Ks: List[List[List[float]]], Vs: List[List[List[float]]], Ms: List[List[List[bool]]] = None) -> List[List[List[float]]]:
-        # Prédit la sortie pour un lot d'entrées (M, T, d)
+        # Calcule l'attention pour plusieurs entrées
         self.Qs, self.Ks, self.Vs, self.Ms = Qs, Ks, Vs, Ms
-        self.Ss = []
-        self.Ps = []
-        Ys      = []
+        self.Ss, self.Ps, Ys = [], [], []
 
         for i in range(len(Qs)):
-            Q, K, V, M = Qs[i], Ks[i], Vs[i], Ms[i] if Ms else None
-            Y, S, P = self.forward_single(Q, K, V, M)
-            
+            S, P, Y = self.forward_single(Qs[i], Ks[i], Vs[i], Ms[i] if Ms else None)
             self.Ss.append(S)
             self.Ps.append(P)
             Ys.append(Y)
 
         return Ys
 
-    def backward_single(self, dY: List[List[float]], alpha: float = 0.01) -> Tuple[List[List[float]], List[List[float]], List[List[float]]]:
-        # Rétropropagation pour une seule entrée (T, d)
-        dP = mat_dot(dY, mat_transpose(self.Vs))  
-        dV = mat_dot(mat_transpose(self.Ps), dY)  
-        
-        dS = mat_dot(dY, self.Ks)
-        dK = mat_dot(mat_transpose(self.Qs), dS)  
-        dQ = mat_dot(mat_transpose(self.Vs), dS) 
+    def backward_single(self, dY: List[List[float]], Q: List[List[float]], K: List[List[float]], V: List[List[float]], P: List[List[float]], S: List[List[float]]) -> Tuple[List[List[float]], List[List[float]], List[List[float]]]:
+        # Rétropropagation pour une seule entrée
+        d = len(Q[0])
+        scale = 1 / math.sqrt(d)
 
-        dQ = vec_smul(dQ, alpha)
-        dK = vec_smul(dK, alpha)
-        dV = vec_smul(dV, alpha)
+        dP = mat_dot(dY, mat_transpose(V))        
+        dS = mat_ew_mul(P, mat_ew_sub(dP, [[vec_dot(dP[i], P[i]) for _ in range(len(P[i]))] for i in range(len(P))]))
+        dQ = mat_smul(mat_dot(dS, K), scale)
+        dK = mat_smul(mat_dot(mat_transpose(dS), Q), scale)
+        dV = mat_dot(mat_transpose(P), dY)
+
         return dQ, dK, dV
 
     def backward(self, dYs: List[List[List[float]]], alpha: float = 0.01) -> Tuple[List[List[List[float]]], List[List[List[float]]], List[List[List[float]]]]:
-        # Rétropropagation pour un lot d'entrées (M, T, d)
-        dQs = []
-        dKs = []
-        dVs = []
-
-        for i in range(len(dYs)):
-            dQ, dK, dV = self.backward_single(dYs[i], alpha)
+        # Rétropropagation pour plusieurs entrées
+        dQs, dKs, dVs = [], [], []
+        for dY, Q, K, V, P, S in zip(dYs, self.Qs, self.Ks, self.Vs, self.Ps, self.Ss):
+            dQ, dK, dV = self.backward_single(dY, Q, K, V, P, S)
             dQs.append(dQ)
             dKs.append(dK)
             dVs.append(dV)
-
         return dQs, dKs, dVs
