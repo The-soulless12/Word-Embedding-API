@@ -2,7 +2,7 @@ import math
 from typing import List, Tuple
 from myapi.mat_func import mat_add_vec, mat_dot, mat_ew_op, mat_random, mat_transpose, mat_ew_sub, mat_smul, mat_ew_mul, mat_softmax
 from . import Layer
-from myapi.vec_func import vec_ew_mul, vec_ew_op, vec_random, vec_sum, vec_val, vec_smul, vec_ew_sub, vec_dot
+from myapi.vec_func import vec_ew_mul, vec_ew_op, vec_random, vec_sum, vec_val, vec_smul, vec_ew_sub, vec_dot, vec_ew_add
 
 class Linear(Layer):
     def __init__(self, in_size: int, out_size: int, bias: bool = False) -> None:
@@ -66,84 +66,80 @@ class Embedding(Layer):
 
 class LayerNorm(Layer):
     def __init__(self, dim: int, eps: float = 1e-5) -> None:
+        # Initialise la normalisation de couche
         self.eps = eps
-        self.gamma = vec_val(dim, 1.0)  # shape: (features,)
-        self.beta = vec_val(dim, 0.0)   # shape: (features,)
+        self.gamma = vec_val(dim, 1.0)
+        self.beta = vec_val(dim, 0.0)
 
-    def forward(self, X: List[List[List[float]]]) -> List[List[List[float]]]:
+    def forward(self, X: list[list[list[float]]]) -> list[list[list[float]]]:
         # Applique la normalisation couche par couche sur le dernier axe (features)
         self.X = X
-        self.mean, self.std, self.norm = [], [], []
-        O = []
+        batch_means: list[list[float]] = []
+        batch_stds:  list[list[float]] = []
+        batch_norms: list[list[list[float]]] = []
+        output:     list[list[list[float]]] = []
 
-        for x_batch in X:
-            mean_batch, std_batch, norm_batch, o_batch = [], [], [], []
+        for batch in X:
+            means: list[float] = []
+            stds:  list[float] = []
+            norms: list[list[float]] = []
+            outs:  list[list[float]] = []
 
-            for x in x_batch:
-                mu = vec_sum(x) / len(x)
-                variance = vec_sum([(xi - mu) ** 2 for xi in x]) / len(x)
-                std = (variance + self.eps) ** 0.5
+            for x in batch:
+                n = len(x)
+                mu  = sum(x) / n
+                var = sum((xi - mu) ** 2 for xi in x) / n
+                std = math.sqrt(var + self.eps)
+                denom = std + self.eps
 
-                x_norm = [(xi - mu) / std for xi in x]
-                out = [self.gamma[i] * x_norm[i] + self.beta[i] for i in range(len(x))]
+                xn = [(xi - mu) / denom for xi in x]
+                xo = vec_ew_add(vec_ew_mul(xn, self.gamma), self.beta)
 
-                mean_batch.append(mu)
-                std_batch.append(std)
-                norm_batch.append(x_norm)
-                o_batch.append(out)
+                means.append(mu)
+                stds.append(std)
+                norms.append(xn)
+                outs.append(xo)
 
-            self.mean.append(mean_batch)
-            self.std.append(std_batch)
-            self.norm.append(norm_batch)
-            O.append(o_batch)
+            batch_means.append(means)
+            batch_stds.append(stds)
+            batch_norms.append(norms)
+            output.append(outs)
 
-        return O
+        self.mean = batch_means
+        self.std  = batch_stds
+        self.norm = batch_norms
+        
+        return output
 
-    def backward(self, dY: List[List[List[float]]], alpha: float = 0.01) -> List[List[List[float]]]:
-        # Calcule le gradient par rapport à l’entrée, gamma et beta et met à jour ces derniers
+    def backward(self, dY: list[list[list[float]]], alpha: float = 0.1) -> list[list[list[float]]]:
+        # Rétropropagation de la normalisation de couche
         dgamma = vec_val(len(self.gamma), 0.0)
-        dbeta = vec_val(len(self.beta), 0.0)
+        dbeta  = vec_val(len(self.beta),  0.0)
+        for dy_batch, xn_batch in zip(dY, self.norm):
+            for dy, xn in zip(dy_batch, xn_batch):
+                dgamma = vec_ew_add(dgamma, vec_ew_mul(dy, xn))
+                dbeta  = vec_ew_add(dbeta, dy)
+        self.gamma = vec_ew_op(self.gamma, dgamma, lambda g, dg: g - alpha * dg)
+        self.beta  = vec_ew_op(self.beta,  dbeta, lambda b, db: b - alpha * db)
 
-        # Première passe : calcul des gradients de gamma et beta
-        for dy_batch, norm_batch in zip(dY, self.norm):
-            for dy, x_norm in zip(dy_batch, norm_batch):
-                for i in range(len(dy)):
-                    dgamma[i] += dy[i] * x_norm[i]
-                    dbeta[i] += dy[i]
-
-        # Mise à jour des paramètres gamma et beta avec le taux d’apprentissage alpha
-        for i in range(len(self.gamma)):
-            self.gamma[i] -= alpha * dgamma[i]
-            self.beta[i] -= alpha * dbeta[i]
-
-        # Deuxième passe : calcul du gradient par rapport à l’entrée X
-        dX = []
+        dX: list[list[list[float]]] = []
         for x_batch, dy_batch, mean_batch, std_batch in zip(self.X, dY, self.mean, self.std):
-            dX_batch = []
-
+            dX_b: list[list[float]] = []
             for x, dy, mu, std in zip(x_batch, dy_batch, mean_batch, std_batch):
-                dx_norm = vec_ew_mul(dy, self.gamma)
-
-                dvar = vec_sum([
-                    dx_norm[j] * (x[j] - mu) * -0.5 / (std ** 3)
-                    for j in range(len(x))
-                ])
-
-                dmean = vec_sum([
-                    -dx_norm[j] / std for j in range(len(x))
-                ]) + dvar * vec_sum([
-                    -2 * (x[j] - mu) for j in range(len(x))
-                ]) / len(x)
-
+                dxn = vec_ew_mul(dy, self.gamma)
+                dvar = sum(dxn[j] * (x[j] - mu) * -0.5 / (std**3) for j in range(len(x)))
+                dmean = (
+                    sum(-dxn[j] / std for j in range(len(x)))
+                    + dvar * sum(-2 * (x[j] - mu) for j in range(len(x))) / len(x)
+                )
                 dx = [
-                    dx_norm[j] / std +
-                    dvar * 2 * (x[j] - mu) / len(x) +
-                    dmean / len(x)
+                    dxn[j] / std
+                    + dvar * 2 * (x[j] - mu) / len(x)
+                    + dmean / len(x)
                     for j in range(len(x))
                 ]
-                dX_batch.append(dx)
-
-            dX.append(dX_batch)
+                dX_b.append(dx)
+            dX.append(dX_b)
 
         return dX
 
