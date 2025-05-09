@@ -8,7 +8,7 @@ Framework de Deep Learning en Python intégrant des mécanismes de Word Embeddin
 
 # Structure du Projet
 - myapi/ : Contient le code source du framework.
-  - __init_\_.py : Définit les classes de base Module et Layer.
+  - _\_init_\_.py : Définit les classes de base Module et Layer.
   - vec_func.py : Contient l'implémentation des fonctions vectorielles (addition, multiplication, normalisation, etc.).
   - mat_func.py : Contient l'implémentation des fonctions matricielles (produit matriciel, transposition, etc.).
   - layers_starter.py : Implémentation des couches spécifiques (Linear, Embedding, LayerNorm & ScaledDotProductAttention).
